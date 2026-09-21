@@ -1,0 +1,9 @@
+[advisories]
+ignore = [
+    # Marvin attack: rsa's private-key decryption is not constant time, and no
+    # release fixes it (https://github.com/RustCrypto/RSA/issues/626). kseal
+    # decrypts with a local private key only in LocalPrivateKey, for tests and
+    # offline use; real decryption happens in the KMS, and sealing only
+    # encrypts. Drop this entry once rsa ships a fix.
+    "RUSTSEC-2023-0071",
+]

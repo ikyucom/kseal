@@ -1,0 +1,71 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-15
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - name: Install musl build deps
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        # aws-lc-sys (rustls' default backend) needs a musl C toolchain, cmake,
+        # and clang for bindgen; do not rely on the runner image preinstalling them.
+        run: sudo apt-get update && sudo apt-get install -y musl-tools cmake clang
+      - name: Check the tag against the crate version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 --locked | jq -r '.packages[] | select(.name == "kseal-cli") | .version')
+          if [ "v${version}" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the crate version ${version}"
+            exit 1
+          fi
+          echo "KSEAL_CRATE_VERSION=${version}" >> "$GITHUB_ENV"
+      - name: Build
+        env:
+          KSEAL_GIT_SHA: ${{ github.sha }}
+        run: cargo build --release --locked -p kseal-cli --bin kseal --target ${{ matrix.target }}
+      - name: Check the binary's version line
+        # Every target builds on a runner of its own architecture, so the binary runs here.
+        run: |
+          actual=$("target/${{ matrix.target }}/release/kseal" --version)
+          expected="kseal ${KSEAL_CRATE_VERSION} (${GITHUB_SHA})"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::kseal --version printed '${actual}', expected '${expected}'"
+            exit 1
+          fi
+      - name: Package binary and checksum
+        run: |
+          archive="kseal-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
+          tar -C "target/${{ matrix.target }}/release" -czf "$archive" kseal
+          shasum -a 256 "$archive" > "$archive.sha256"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "kseal-*.tar.gz"
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
+          gh release upload "$GITHUB_REF_NAME" kseal-*.tar.gz kseal-*.tar.gz.sha256 --clobber

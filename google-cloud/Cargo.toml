@@ -1,0 +1,12 @@
+[package]
+name = "kseal-google-cloud"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Google Cloud KMS provider for kseal"
+
+[dependencies]
+kseal = { workspace = true }
+
+google-cloud-kms-v1 = { workspace = true }

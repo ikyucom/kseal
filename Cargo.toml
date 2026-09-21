@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+members = ["google-cloud"]
 
 [workspace.package]
 version = "0.1.0"
@@ -8,8 +9,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/ikyucom/kseal"
 
 [workspace.dependencies]
+kseal = { path = "." }
+
 aes-gcm = { version = "0.10.3" }
 base64 = { version = "0.22.1" }
+google-cloud-kms-v1 = { version = "1.14.0" }
 rand = { version = "0.8.8" }
 rsa = { version = "0.9.10", features = ["pem"] }
 serde = { version = "1.0.229", features = ["derive"] }

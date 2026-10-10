@@ -1,0 +1,23 @@
+[package]
+name = "kseal-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+kseal = { path = ".." }
+libfuzzer-sys = "0.4.13"
+
+# Not a member of the main workspace: fuzzing needs a nightly toolchain.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "sealed_file"
+path = "fuzz_targets/sealed_file.rs"
+test = false
+doc = false
+bench = false

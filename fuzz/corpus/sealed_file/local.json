@@ -1,0 +1,12 @@
+{
+  "schema": "kseal/v1",
+  "secret": "EXAMPLE",
+  "kms": {
+    "provider": "local"
+  },
+  "wrapped_dek": "pfyT0e/WbtlrbmjVI/aKVvqCaermT2EM5df95b3vyGfiGE+5ZiZVIIottJi9Ie06qDxHapQxbz9ra5pidRs5lXai+bs9x/RNvlA2wOgppPxCqMSj1StEOz01ZN9zuV72iobimHMm/YSD2qwNOkrW1RFCdKvK6iEGJ+3vgNYTcqeks9fedxTvEeIgMvlh0U6xWnrVpg2MbHWxk7PrmIvsg0cax2123V2/nnFBGI2xDrz1mokJIR5i8qZHmpDYbBv2AT5OZyFgaYzmTdY6aVrUhCMCiAHsNidm7pqnBbU0DGtt5iyTk56iFSefBn6T/3mGCmtgEAYR/be6INyXryWEzw==",
+  "aes": {
+    "nonce": "CX1AuRU/OsspKuvr",
+    "ciphertext": "gMTMwhsB3i/PsPWODUkCk0vUJHmZ"
+  }
+}

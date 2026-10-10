@@ -200,6 +200,13 @@ cargo audit
 cargo test --workspace
 ```
 
+The sealed-file parser has a fuzz target (needs a nightly toolchain and
+[cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz)):
+
+```sh
+cd fuzz && cargo +nightly fuzz run sealed_file corpus/sealed_file
+```
+
 `kseal keygen` makes a local RSA key pair, and `--public-key` / `--private-key`
 seal and open with local keys instead of KMS. These exist for tests: a real
 private key belongs in the KMS.

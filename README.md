@@ -210,3 +210,8 @@ cd fuzz && cargo +nightly fuzz run sealed_file corpus/sealed_file
 `kseal keygen` makes a local RSA key pair, and `--public-key` / `--private-key`
 seal and open with local keys instead of KMS. These exist for tests: a real
 private key belongs in the KMS.
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.

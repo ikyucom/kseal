@@ -3,9 +3,11 @@
 //! The offline paths (seal with a public-key PEM, open with a private-key PEM)
 //! use only the core crate. The Google Cloud paths (fetch the public key, or
 //! decrypt via Cloud KMS) go through kseal-google-cloud and run on this binary's
-//! tokio runtime. `keygen` is a test helper: a real deployment's private key
-//! lives in KMS, never on disk.
+//! tokio runtime. `seed` and `cloud-deploy` load an environment's sealed values
+//! into Secret Manager. `keygen` is a test helper: a real deployment's private
+//! key lives in KMS, never on disk.
 
+mod cloud_deploy;
 mod config;
 
 use std::fs;
@@ -14,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use kseal::{KmsRef, PublicKey, SealedFile, local::LocalPrivateKey};
+use kseal_google_cloud::seed;
 use rsa::{
     RsaPrivateKey, RsaPublicKey,
     pkcs8::{DecodePublicKey as _, EncodePrivateKey as _, EncodePublicKey as _, LineEnding},
@@ -43,6 +46,8 @@ async fn run() -> CliResult {
         Some(Command::Open(cmd)) => cmd.run().await,
         Some(Command::Rewrap(cmd)) => cmd.run().await,
         Some(Command::Verify(cmd)) => cmd.run().await,
+        Some(Command::Seed(cmd)) => cmd.run().await,
+        Some(Command::CloudDeploy(cmd)) => cmd.run().await,
         Some(Command::Inspect(cmd)) => cmd.run(),
         Some(Command::Keygen(cmd)) => cmd.run(),
         None => Err("no subcommand given; run `kseal --help`".into()),
@@ -74,6 +79,8 @@ enum Command {
     Open(Open),
     Rewrap(Rewrap),
     Verify(Verify),
+    Seed(Seed),
+    CloudDeploy(cloud_deploy::CloudDeploy),
     Inspect(Inspect),
     Keygen(Keygen),
 }
@@ -272,41 +279,122 @@ impl Verify {
             Some(path) => config::Config::load(path)?,
             None => config::Config::find(&std::env::current_dir()?)?,
         };
-        let config::Config::GoogleCloud { key, public_key } = cfg;
-        // Config::load already parsed the key, so it is a valid resource here.
-        // Confirm the pin points where the caller expects before trusting or
-        // fetching it: matching the committed PEM proves the key is genuine, not
-        // that it is the right key for this environment. Compare the key ring by
-        // value; a substring prefix would accept a look-alike project.
-        // The expected ring was parsed with the arguments, so a mistyped resource
-        // is its own error rather than a false "wrong key ring".
-        if let Some(expected) = &self.expect_key_ring {
-            let ring = key.key_ring();
-            if &ring != expected {
-                return Err(format!(
-                    "pinned key is not in the expected key ring:\n  key ring: {ring}\n  expected: {expected}"
-                )
-                .into());
-            }
-        }
-        // Parse both sides into keys and compare, so a corrupt or hand-edited PEM
-        // fails here rather than silently sealing under a key that cannot decrypt,
-        // and PEM whitespace differences do not matter.
-        let committed = RsaPublicKey::from_public_key_pem(&fs::read_to_string(&public_key)?)?;
-        let (fetched_pem, _) = kseal_google_cloud::fetch_public_key(key.to_string()).await?;
-        let fetched = RsaPublicKey::from_public_key_pem(&fetched_pem)?;
-        if committed == fetched {
-            eprintln!("ok: {} matches {}", public_key.display(), key);
-            Ok(())
-        } else {
-            Err(format!(
-                "public key mismatch: {} does not match GetPublicKey({})",
-                public_key.display(),
-                key
+        verify_config(cfg, self.expect_key_ring.as_ref()).await
+    }
+}
+
+/// Check a config's pinned key: that it is in `expected` when given, then that
+/// the committed public-key PEM matches the key version's public key in KMS.
+async fn verify_config(
+    cfg: config::Config,
+    expected: Option<&kseal_google_cloud::KeyRingName>,
+) -> CliResult {
+    let config::Config::GoogleCloud { key, public_key } = cfg;
+    // Config::load already parsed the key, so it is a valid resource here.
+    // Confirm the pin points where the caller expects before trusting or
+    // fetching it: matching the committed PEM proves the key is genuine, not
+    // that it is the right key for this environment. Compare the key ring by
+    // value; a substring prefix would accept a look-alike project.
+    // The expected ring was parsed with the arguments, so a mistyped resource is
+    // its own error rather than a false "wrong key ring".
+    if let Some(expected) = expected {
+        let ring = key.key_ring();
+        if &ring != expected {
+            return Err(format!(
+                "pinned key is not in the expected key ring:\n  key ring: {ring}\n  expected: {expected}"
             )
-            .into())
+            .into());
         }
     }
+    // Parse both sides into keys and compare, so a corrupt or hand-edited PEM
+    // fails here rather than silently sealing under a key that cannot decrypt,
+    // and PEM whitespace differences do not matter.
+    let committed = RsaPublicKey::from_public_key_pem(&fs::read_to_string(&public_key)?)?;
+    let (fetched_pem, _) = kseal_google_cloud::fetch_public_key(key.to_string()).await?;
+    let fetched = RsaPublicKey::from_public_key_pem(&fetched_pem)?;
+    if committed == fetched {
+        eprintln!("ok: {} matches {}", public_key.display(), key);
+        Ok(())
+    } else {
+        Err(format!(
+            "public key mismatch: {} does not match GetPublicKey({})",
+            public_key.display(),
+            key
+        )
+        .into())
+    }
+}
+
+/// Load an environment's sealed values into Google Secret Manager. Checks the
+/// directory's .kseal.kdl, that every sealed file uses a key in the expected key
+/// ring, and that every secret exists; then adds a version to each secret whose
+/// value changed since the state object was last written, and rewrites it.
+/// Rewrapped or renamed files change nothing; secrets are never created.
+#[derive(argh::FromArgs)]
+#[argh(subcommand, name = "seed")]
+struct Seed {
+    /// the environment's directory, holding its .kseal.kdl and sealed (*.enc)
+    /// files
+    #[argh(positional)]
+    dir: PathBuf,
+    /// the Google Cloud project holding the environment's secrets
+    #[argh(option)]
+    project: String,
+    /// the Cloud Storage object recording what the last successful seed left
+    /// (gs://BUCKET/OBJECT)
+    #[argh(option)]
+    state: seed::GcsObject,
+    /// the environment's key ring (projects/P/locations/L/keyRings/R); the
+    /// .kseal.kdl and every sealed file must use a key in it
+    #[argh(option)]
+    expect_key_ring: kseal_google_cloud::KeyRingName,
+    /// only check, without decrypting or adding versions
+    #[argh(switch)]
+    check: bool,
+}
+
+impl Seed {
+    async fn run(self) -> CliResult {
+        let env = seed::Environment {
+            key_ring: self.expect_key_ring,
+            project: self.project,
+            state: self.state,
+        };
+        let sealed = check_environment(&self.dir, &env).await?;
+        if self.check {
+            eprintln!(
+                "ok: {} sealed files in {}",
+                sealed.len(),
+                self.dir.display()
+            );
+            return Ok(());
+        }
+        let seeded = seed::seed(&sealed, &env).await?;
+        eprintln!("seeded {} secrets", seeded.len());
+        for secret in seeded {
+            println!("{secret}");
+        }
+        Ok(())
+    }
+}
+
+/// Check an environment's directory before seeding it: its config, its sealed
+/// files, and that their secrets exist. Decrypts nothing.
+async fn check_environment(
+    dir: &Path,
+    env: &seed::Environment,
+) -> Result<Vec<seed::Sealed>, Box<dyn std::error::Error>> {
+    verify_config(
+        config::Config::load(&dir.join(".kseal.kdl"))?,
+        Some(&env.key_ring),
+    )
+    .await?;
+    let sealed = seed::load_dir(dir, &env.key_ring)?;
+    seed::Secrets::new(&env.project)
+        .await?
+        .check_exist(&sealed)
+        .await?;
+    Ok(sealed)
 }
 
 /// Print a sealed file's metadata. No plaintext is shown.

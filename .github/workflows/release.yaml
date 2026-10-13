@@ -59,6 +59,13 @@ jobs:
           archive="kseal-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
           tar -C "target/${{ matrix.target }}/release" -czf "$archive" kseal
           shasum -a 256 "$archive" > "$archive.sha256"
+      - name: Hand the Linux binary to the image job
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kseal-linux
+          path: target/${{ matrix.target }}/release/kseal
+          if-no-files-found: error
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -69,3 +76,35 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes || true
           gh release upload "$GITHUB_REF_NAME" kseal-*.tar.gz kseal-*.tar.gz.sha256 --clobber
+
+  image:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: kseal-linux
+      - name: Build and push the image
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          chmod +x kseal
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -t "$IMAGE:$GITHUB_REF_NAME" .
+          docker push "$IMAGE:$GITHUB_REF_NAME"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_REF_NAME")
+          echo "digest=${digest#*@}" >> "$GITHUB_OUTPUT"
+      - name: Attest the image's build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

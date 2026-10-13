@@ -15,7 +15,10 @@ kseal-google-cloud = { path = "google-cloud" }
 aes-gcm = { version = "0.10.3" }
 argh = { version = "0.1.19" }
 base64 = { version = "0.22.1" }
+crc32c = { version = "0.6.8" }
 google-cloud-kms-v1 = { version = "1.14.0" }
+google-cloud-secretmanager-v1 = { version = "1.14.0" }
+google-cloud-storage = { version = "1.20.0" }
 kdl = { version = "6.7.1" }
 rand = { version = "0.8.8" }
 rsa = { version = "0.9.10", features = ["pem"] }

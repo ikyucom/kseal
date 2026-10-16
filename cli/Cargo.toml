@@ -15,10 +15,14 @@ kseal = { workspace = true }
 kseal-google-cloud = { workspace = true }
 
 argh = { workspace = true }
+bytes = { workspace = true }
+flate2 = { workspace = true }
+google-cloud-storage = { workspace = true }
 kdl = { workspace = true, features = ["serde"] }
 rand = { workspace = true }
 rsa = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tar = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 zeroize = { workspace = true }

@@ -70,6 +70,16 @@ gh attestation verify kseal-v0.1.0-x86_64-unknown-linux-musl.tar.gz \
   --signer-workflow ikyucom/kseal/.github/workflows/release.yaml
 ```
 
+Each release also publishes a container image, `ghcr.io/ikyucom/kseal:<tag>`,
+holding the static Linux binary as its entrypoint. Pin it by digest, and verify
+it the same way:
+
+```sh
+gh attestation verify oci://ghcr.io/ikyucom/kseal:v0.1.0 \
+  --repo ikyucom/kseal \
+  --signer-workflow ikyucom/kseal/.github/workflows/release.yaml
+```
+
 ## Usage
 
 The key must be a Google Cloud KMS asymmetric decryption key using
@@ -153,6 +163,54 @@ version and wraps it for the nearest `.kseal.kdl` (or `--to-gcp-key-version`);
 the encrypted value is untouched. Unwrapping needs decrypt access, so rewrap
 runs wherever decrypting is allowed (typically CI). Keep the old version enabled
 until no file refers to it.
+
+### Seed Secret Manager
+
+```sh
+kseal seed prod \
+  --project my-project \
+  --state gs://my-bucket/kseal/prod.tsv \
+  --expect-key-ring projects/my-project/locations/asia-northeast1/keyRings/kseal
+```
+
+This loads one environment's directory into Google Secret Manager. It first
+checks the directory's `.kseal.kdl` like `verify`, that every sealed file uses a
+key in the expected key ring, that no secret is sealed with two values, and that
+every secret exists; seeding never creates secrets. It then adds a version to
+each secret whose value changed since the state object was last written, and
+rewrites the state. The state holds the secret names and `body_sha256` of what
+the directory had, so a rewrap or rename seeds nothing, and reverting to an
+earlier value seeds it again. The state is written with a generation
+precondition, so two seeds of one environment cannot overwrite each other. A
+seed that fails part-way writes no state, and the next one repeats it; a value
+already added gets a second version with the same payload.
+
+`--check` stops before decrypting. Seeding needs decrypt on the key,
+`roles/secretmanager.secretVersionAdder` on each secret,
+`roles/secretmanager.viewer` (or `secretmanager.secrets.get`), and read and
+write access to the state object.
+
+### Seed from Google Cloud Deploy
+
+`kseal cloud-deploy` serves a Cloud Deploy
+[custom target](https://docs.cloud.google.com/deploy/docs/custom-targets), so
+that seeding runs inside Google Cloud as the target's execution service account
+and the code it runs is fixed by the custom target type rather than by whoever
+creates a release. Define the type with the release image for both tasks, and
+give the environment through the container's environment, where a release
+cannot change it:
+
+| Variable | Value |
+| --- | --- |
+| `KSEAL_KEY_RING` | the key ring every sealed file and the `.kseal.kdl` must use |
+| `KSEAL_PROJECT` | the project holding the environment's secrets |
+| `KSEAL_STATE` | the state object, `gs://BUCKET/OBJECT` |
+
+The image's entrypoint is `kseal`, so the container's args are `cloud-deploy`.
+A release's source is the
+environment's directory, plus a minimal `skaffold.yaml` (`apiVersion:
+skaffold/v4beta7`, `kind: Config`) that Cloud Deploy requires. Render checks it
+like `kseal seed --check` and passes it on; deploy seeds it.
 
 ## Security
 

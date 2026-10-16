@@ -5,7 +5,10 @@
 //! Identity Federation in CI). Encrypt side: [`fetch_public_key`] reads the key
 //! version's public PEM once, so sealing can then run offline with
 //! `kseal::PublicKey`. Everything here is async and runs on the caller's tokio
-//! runtime; the crate creates no runtime of its own.
+//! runtime; the crate creates no runtime of its own. [`seed`] loads an
+//! environment's sealed files into Secret Manager.
+
+pub mod seed;
 
 use google_cloud_kms_v1::{
     client::KeyManagementService, model::crypto_key_version::CryptoKeyVersionAlgorithm,

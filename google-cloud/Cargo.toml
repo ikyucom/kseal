@@ -9,4 +9,12 @@ description = "Google Cloud KMS provider for kseal"
 [dependencies]
 kseal = { workspace = true }
 
+crc32c = { workspace = true }
 google-cloud-kms-v1 = { workspace = true }
+google-cloud-secretmanager-v1 = { workspace = true }
+google-cloud-storage = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+rsa = { workspace = true }

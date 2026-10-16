@@ -1,0 +1,49 @@
+[workspace]
+resolver = "2"
+members = ["cli", "google-cloud"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ikyucom/kseal"
+
+[workspace.dependencies]
+kseal = { path = "." }
+kseal-google-cloud = { path = "google-cloud" }
+
+aes-gcm = { version = "0.10.3" }
+argh = { version = "0.1.19" }
+base64 = { version = "0.22.1" }
+google-cloud-kms-v1 = { version = "1.14.0" }
+kdl = { version = "6.7.1" }
+rand = { version = "0.8.8" }
+rsa = { version = "0.9.10", features = ["pem"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151" }
+sha2 = { version = "0.10.9" }
+thiserror = { version = "2.0.20" }
+tokio = { version = "1.53.1", features = ["rt", "net", "time"] }
+zeroize = { version = "1.9.0", features = ["zeroize_derive"] }
+
+[package]
+name = "kseal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Asymmetric-KMS envelope encryption for secrets stored in git"
+
+[dependencies]
+aes-gcm = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+rsa = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros"] }
